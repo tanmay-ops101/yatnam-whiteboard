@@ -341,6 +341,7 @@
     .settings-title { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 650; color: #555; letter-spacing: .01em; }
     .settings-title output { color: var(--muted); font-weight: 400; }
     .ink-controls { display:flex; flex-direction:column; gap:12px; }
+    .preset-edit-status { margin-top:-6px; font-size:10px; color:var(--muted); }
     .color-row { display: flex; align-items: center; justify-content: space-between; gap: 7px; flex-wrap: nowrap; }
     .settings .swatch { width: 34px; height: 34px; border-radius: 50%; padding: 0; box-shadow: inset 0 0 0 1px #00000012, 0 3px 8px #00000012; transition: transform .16s ease, box-shadow .16s ease, outline .16s ease; }
     .settings .swatch:hover { transform: translateY(-2px) scale(1.06); box-shadow: inset 0 0 0 1px #00000012, 0 7px 14px #00000020; }
@@ -403,6 +404,7 @@
         <div class="ink-controls">
           <div class="settings-title"><span id="inkToolLabel">Pen settings</span><output id="inkLivePreview" aria-label="Selected ink preview">●</output></div>
           <div class="settings-title"><span>Ink colour</span><output id="inkHex">#242424</output></div>
+          <div class="preset-edit-status" id="presetEditStatus">Black selected — RGB/HEX edits update this preset</div>
           <div class="color-row">
             <button class="swatch selected" data-ink="#242424" style="background:#242424" title="Black"></button>
             <button class="swatch" data-ink="#3434a8" style="background:#3434a8" title="Blue"></button>
@@ -482,7 +484,7 @@
   <script src="./jspdf.umd.min.js"></script>
   <script>
     const canvas=document.getElementById("canvas"), world=document.getElementById("world"), inkLayer=document.getElementById("inkLayer"), hint=document.getElementById("hint"), eraserCursor=document.getElementById("eraserCursor"), inkCursor=document.getElementById("inkCursor"), shapeCursor=document.getElementById("shapeCursor"), settings=document.getElementById("settings"), shapeSettings=document.getElementById("shapeSettings"), shapeMenu=document.getElementById("shapeMenu"), exportMenu=document.getElementById("exportMenu"), inkPicker=document.getElementById("inkPicker"), inkHex=document.getElementById("inkHex"), hexValue=document.getElementById("hexValue"), sizeSlider=document.getElementById("inkSizeSlider"), sizeValue=document.getElementById("inkSizeValue"), eraserSizeSlider=document.getElementById("eraserSizeSlider"), eraserSizeValue=document.getElementById("eraserSizeValue"), sizePreview=document.getElementById("sizePreview");
-    let tool="select", color="yellow", inkColor="#242424", inkSize=3, eraserSize=28, shapeFill="transparent", shapeBorder="#625ee8", shapeType="rectangle", eraserMode="stroke", scale=1, pan={x:0,y:0}, drawing=false, stroke, points=[], shapeDraft=null, history=[], redoStack=[], selectedEmoji="😀", selectedShape=null, selectedObject=null, strokeMove=null, selectedObjects=new Set(), marqueeDrag=null, marqueeMove=null;
+    let tool="select", color="yellow", inkColor="#242424", inkSize=3, eraserSize=28, shapeFill="transparent", shapeBorder="#625ee8", shapeType="rectangle", eraserMode="stroke", scale=1, pan={x:0,y:0}, drawing=false, stroke, points=[], shapeDraft=null, history=[], redoStack=[], selectedEmoji="😀", selectedShape=null, selectedObject=null, strokeMove=null, selectedObjects=new Set(), marqueeDrag=null, marqueeMove=null, editingPreset=null;
     const snapshot=()=>({world:world.innerHTML,ink:inkLayer.innerHTML,background:canvas.dataset.background||"dots",backgroundClass:canvas.className});
     const same=(a,b)=>a.world===b.world&&a.ink===b.ink;
     const syncHint=()=>{hint.style.display=world.children.length||inkLayer.querySelector(".stroke")?"none":"block";};
@@ -516,16 +518,22 @@
     const clamp=n=>Math.max(0,Math.min(255,Number.isFinite(n)?Math.round(n):0));
     const rgbToHex=(r,g,b)=>"#"+[r,g,b].map(n=>clamp(n).toString(16).padStart(2,"0")).join("");
     const hexToRgb=hex=>{const value=hex.replace("#","");if(!/^[\da-f]{6}$/i.test(value))return null;return{r:parseInt(value.slice(0,2),16),g:parseInt(value.slice(2,4),16),b:parseInt(value.slice(4,6),16)};};
-    const updateColorControls=()=>{const rgb=hexToRgb(inkColor);if(!rgb)return;inkPicker.value=inkColor;inkHex.value=inkColor;hexValue.value=inkColor;document.getElementById("redValue").value=rgb.r;document.getElementById("greenValue").value=rgb.g;document.getElementById("blueValue").value=rgb.b;document.querySelectorAll("#settings .swatch").forEach(b=>b.classList.toggle("selected",(b.dataset.ink||"").toLowerCase()===inkColor.toLowerCase()));sizePreview.style.setProperty("--preview-color",inkColor);inkCursor.style.setProperty("--ink",inkColor);const live=document.getElementById("inkLivePreview");if(live){live.textContent=tool==="highlighter"?"◆":"●";live.style.color=inkColor;}};
+    const PRESET_KEY="yatnam-whiteboard-ink-presets-v1";
+    const updatePresetEditStatus=()=>{const status=document.getElementById("presetEditStatus");if(!status)return;if(editingPreset){const name=editingPreset.title||"Selected preset";status.textContent=`Editing ${name} — RGB/HEX changes update this preset`;}else{status.textContent="Custom colour — select a preset to edit it";}};
+    const saveInkPresets=()=>{const colors={_editingPresetName:editingPreset?.title||""};document.querySelectorAll("#settings [data-ink]").forEach(b=>{colors[b.title||b.dataset.ink]=b.dataset.ink;});try{localStorage.setItem(PRESET_KEY,JSON.stringify(colors));}catch(error){}};
+    const updateColorControls=()=>{const rgb=hexToRgb(inkColor);if(!rgb)return;inkPicker.value=inkColor;inkHex.value=inkColor;hexValue.value=inkColor;document.getElementById("redValue").value=rgb.r;document.getElementById("greenValue").value=rgb.g;document.getElementById("blueValue").value=rgb.b;document.querySelectorAll("#settings .swatch").forEach(b=>b.classList.toggle("selected",(b.dataset.ink||"").toLowerCase()===inkColor.toLowerCase()));sizePreview.style.setProperty("--preview-color",inkColor);inkCursor.style.setProperty("--ink",inkColor);const live=document.getElementById("inkLivePreview");if(live){live.textContent=tool==="highlighter"?"◆":"●";live.style.color=inkColor;}updatePresetEditStatus();};
     const updateSizeControls=()=>{sizeSlider.value=inkSize;sizeValue.value=`${inkSize} px`;sizePreview.style.setProperty("--preview-size",`${Math.min(inkSize,22)}px`);document.querySelectorAll(".size-button").forEach(b=>b.classList.toggle("selected",Number(b.dataset.size)===inkSize));const cursorSize=tool==="highlighter"?Math.max(12,inkSize*3):Math.max(7,inkSize*1.45);inkCursor.style.width=`${cursorSize}px`;inkCursor.style.height=`${cursorSize}px`;inkCursor.style.margin=`-${cursorSize/2}px 0 0 -${cursorSize/2}px`;};
-    const setInkColor=hex=>{const rgb=hexToRgb(hex);if(!rgb)return;inkColor=rgbToHex(rgb.r,rgb.g,rgb.b);const objects=selectedObjects&&selectedObjects.size?[...selectedObjects]:selectedObject?[selectedObject]:[];objects.forEach(obj=>{if(obj.classList&&obj.classList.contains("stroke"))obj.querySelectorAll("path").forEach(path=>path.setAttribute("stroke",inkColor));});updateColorControls();};
-    document.querySelectorAll("#settings [data-ink]").forEach(b=>b.onclick=()=>setInkColor(b.dataset.ink));
-    inkPicker.oninput=()=>setInkColor(inkPicker.value);
-    hexValue.onchange=()=>{const value=hexValue.value.trim();setInkColor(value.startsWith("#")?value:`#${value}`);};
-    ["redValue","greenValue","blueValue"].forEach(id=>document.getElementById(id).oninput=()=>setInkColor(rgbToHex(Number(document.getElementById("redValue").value),Number(document.getElementById("greenValue").value),Number(document.getElementById("blueValue").value))));
+    const setInkColor=(hex,updateEditingPreset=false)=>{const rgb=hexToRgb(hex);if(!rgb)return;inkColor=rgbToHex(rgb.r,rgb.g,rgb.b);if(updateEditingPreset&&editingPreset){editingPreset.dataset.ink=inkColor;editingPreset.style.background=inkColor;saveInkPresets();}const objects=selectedObjects&&selectedObjects.size?[...selectedObjects]:selectedObject?[selectedObject]:[];objects.forEach(obj=>{if(obj.classList&&obj.classList.contains("stroke"))obj.querySelectorAll("path").forEach(path=>path.setAttribute("stroke",inkColor));});updateColorControls();};
+    document.querySelectorAll("#settings [data-ink]").forEach(b=>b.onclick=()=>{editingPreset=b;setInkColor(b.dataset.ink,false);});
+    inkPicker.oninput=()=>setInkColor(inkPicker.value,true);
+    hexValue.onchange=()=>{const value=hexValue.value.trim();setInkColor(value.startsWith("#")?value:`#${value}`,true);};
+    ["redValue","greenValue","blueValue"].forEach(id=>document.getElementById(id).oninput=()=>setInkColor(rgbToHex(Number(document.getElementById("redValue").value),Number(document.getElementById("greenValue").value),Number(document.getElementById("blueValue").value)),true));
     sizeSlider.oninput=()=>{inkSize=Number(sizeSlider.value);updateSizeControls();};
     eraserSizeSlider.oninput=()=>{eraserSize=Number(eraserSizeSlider.value);eraserSizeValue.value=`${eraserSize} px`;eraserCursor.style.width=`${eraserSize}px`;eraserCursor.style.height=`${eraserSize}px`;eraserCursor.style.margin=`-${eraserSize/2}px 0 0 -${eraserSize/2}px`;};
     eraserSizeSlider.oninput();
+    let presetEditingName="Black";
+    try{const presetColors=JSON.parse(localStorage.getItem(PRESET_KEY)||"null");if(presetColors){document.querySelectorAll("#settings [data-ink]").forEach(b=>{const stored=presetColors[b.title||""];if(stored&&hexToRgb(stored)){b.dataset.ink=stored;b.style.background=stored;}});if(presetColors._editingPresetName)presetEditingName=presetColors._editingPresetName;}}catch(error){}
+    editingPreset=document.querySelector(`#settings [data-ink][title="${presetEditingName.replace(/"/g,'\\"')}"]`)||document.querySelector("#settings [data-ink][title=\"Black\"]")||null;
     updateColorControls();updateSizeControls();
     document.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{shapeFill=b.dataset.fill;document.getElementById("fillLabel").value=shapeFill==="transparent"?"Transparent":"Custom";if(selectedShape){selectedShape.style.setProperty("--shape-fill",shapeFill==="transparent"?"transparent":shapeFill);}}); 
     document.querySelectorAll("[data-border]").forEach(b=>b.onclick=()=>{shapeBorder=b.dataset.border;document.getElementById("borderLabel").value=b.dataset.border;if(selectedShape){selectedShape.style.setProperty("--shape-border",shapeBorder);}}); 
